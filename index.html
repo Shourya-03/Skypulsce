@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Beautiful real-time weather app — search any city, view forecasts, and explore current conditions with a stunning animated UI." />
+  <title>SkyPulse — Weather App</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Animated background layers -->
+  <div class="bg-layer" id="bgLayer">
+    <div class="bg-orb bg-orb--1"></div>
+    <div class="bg-orb bg-orb--2"></div>
+    <div class="bg-orb bg-orb--3"></div>
+    <div class="bg-particles" id="particles"></div>
+  </div>
+
+  <!-- App wrapper -->
+  <div class="app" id="app">
+
+    <!-- ===== TOP BAR ===== -->
+    <header class="topbar" id="topbar">
+      <button class="topbar__back" id="btnBack" aria-label="Go back" style="display:none;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+      </button>
+      <h1 class="topbar__title" id="topbarTitle">SkyPulse</h1>
+      <button class="topbar__settings" id="btnUnits" aria-label="Toggle units" title="Toggle °C / °F">
+        <span id="unitLabel">°C</span>
+      </button>
+    </header>
+
+    <!-- ===== VIEW: HOME ===== -->
+    <section class="view view--home" id="viewHome">
+      <!-- Current weather hero -->
+      <div class="hero" id="heroCard">
+        <div class="hero__loader" id="heroLoader">
+          <div class="shimmer-block shimmer-block--lg"></div>
+          <div class="shimmer-block shimmer-block--sm"></div>
+          <div class="shimmer-block shimmer-block--md"></div>
+        </div>
+        <div class="hero__content" id="heroContent" style="display:none;">
+          <div class="hero__location">
+            <svg class="hero__pin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+            <span id="heroCity">—</span>
+          </div>
+          <div class="hero__icon-wrap">
+            <img class="hero__icon" id="heroIcon" src="" alt="weather icon" />
+          </div>
+          <div class="hero__temp" id="heroTemp">--°</div>
+          <div class="hero__desc" id="heroDesc">—</div>
+          <div class="hero__minmax">
+            <span>H:<strong id="heroHigh">--°</strong></span>
+            <span class="hero__dot">·</span>
+            <span>L:<strong id="heroLow">--°</strong></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick-stats row -->
+      <div class="stats-row" id="statsRow">
+        <div class="stat-card">
+          <svg class="stat-card__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path></svg>
+          <span class="stat-card__value" id="statHumidity">--%</span>
+          <span class="stat-card__label">Humidity</span>
+        </div>
+        <div class="stat-card">
+          <svg class="stat-card__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"></path></svg>
+          <span class="stat-card__value" id="statWind">-- km/h</span>
+          <span class="stat-card__label">Wind</span>
+        </div>
+        <div class="stat-card">
+          <svg class="stat-card__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+          <span class="stat-card__value" id="statFeels">--°</span>
+          <span class="stat-card__label">Feels Like</span>
+        </div>
+        <div class="stat-card">
+          <svg class="stat-card__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 18a5 5 0 0 0-10 0"></path><line x1="12" y1="9" x2="12" y2="2"></line><line x1="4.22" y1="10.22" x2="5.64" y2="11.64"></line><line x1="1" y1="18" x2="3" y2="18"></line><line x1="21" y1="18" x2="23" y2="18"></line><line x1="18.36" y1="11.64" x2="19.78" y2="10.22"></line></svg>
+          <span class="stat-card__value" id="statSunrise">--:--</span>
+          <span class="stat-card__label">Sunrise</span>
+        </div>
+      </div>
+
+      <!-- Hourly Forecast (from 3-hour data) -->
+      <div class="section-label">Today's Forecast</div>
+      <div class="hourly-scroll" id="hourlyScroll">
+        <!-- JS populates -->
+      </div>
+
+      <!-- Recent / Favourite cities -->
+      <div class="section-label" id="recentLabel" style="display:none;">Recent Cities</div>
+      <div class="recent-list" id="recentList">
+        <!-- JS populates -->
+      </div>
+    </section>
+
+    <!-- ===== VIEW: SEARCH ===== -->
+    <section class="view view--search" id="viewSearch" style="display:none;">
+      <div class="search-box">
+        <svg class="search-box__icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input class="search-box__input" id="searchInput" type="text" placeholder="Search any city…" autocomplete="off" />
+        <button class="search-box__clear" id="searchClear" aria-label="Clear search" style="display:none;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div class="search-results" id="searchResults">
+        <!-- JS populates -->
+      </div>
+      <div class="search-empty" id="searchEmpty" style="display:none;">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" opacity=".4"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <p>Type a city name to search</p>
+      </div>
+    </section>
+
+    <!-- ===== VIEW: DETAILS ===== -->
+    <section class="view view--details" id="viewDetails" style="display:none;">
+      <div class="detail-hero glass-card">
+        <div class="detail-hero__top">
+          <div>
+            <div class="detail-hero__city" id="detailCity">—</div>
+            <div class="detail-hero__country" id="detailCountry">—</div>
+          </div>
+          <img class="detail-hero__icon" id="detailIcon" src="" alt="weather" />
+        </div>
+        <div class="detail-hero__temp" id="detailTemp">--°</div>
+        <div class="detail-hero__desc" id="detailDesc">—</div>
+      </div>
+
+      <div class="detail-grid" id="detailGrid">
+        <!-- JS generates stat tiles -->
+      </div>
+
+      <!-- 5-Day Forecast -->
+      <div class="section-label">5-Day Forecast</div>
+      <div class="forecast-list" id="forecastList">
+        <!-- JS populates -->
+      </div>
+    </section>
+
+    <!-- ===== VIEW: ERROR / OFFLINE ===== -->
+    <section class="view view--error" id="viewError" style="display:none;">
+      <div class="error-card glass-card">
+        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <h2 id="errorTitle">Something went wrong</h2>
+        <p id="errorMsg">Please check your connection and try again.</p>
+        <button class="btn-primary" id="btnRetry">Retry</button>
+      </div>
+    </section>
+
+    <!-- ===== BOTTOM NAV ===== -->
+    <nav class="bottom-nav" id="bottomNav">
+      <button class="bottom-nav__item active" data-view="home" aria-label="Home">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+        <span>Home</span>
+      </button>
+      <button class="bottom-nav__item" data-view="search" aria-label="Search">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <span>Search</span>
+      </button>
+    </nav>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
