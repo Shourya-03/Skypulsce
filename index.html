@@ -12,6 +12,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
     rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
+  <script src="app.js" defer></script>
 </head>
 
 <body>
@@ -149,7 +150,7 @@
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
           <input class="search-box__input" id="searchInput" type="text" placeholder="Search any city…"
-            autocomplete="off" />
+            autocomplete="off" aria-label="Search city" />
           <button type="button" class="search-box__clear" id="searchClear" aria-label="Clear search"
             style="display:none;">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
@@ -236,7 +237,9 @@
     </main>
   </div>
 
-  <script src="app.js"></script>
+  <noscript>
+    This app requires JavaScript to function properly.
+  </noscript>
 </body>
 
 </html>
