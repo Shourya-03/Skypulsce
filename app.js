@@ -6,7 +6,9 @@
 (() => {
   'use strict';
 
-  // ── Config ─────────────────────────────────────────────────
+  // =======================
+  // CONSTANTS
+  // =======================
   const GEO_BASE = 'https://geocoding-api.open-meteo.com/v1';
   const WEATHER_BASE = 'https://api.open-meteo.com/v1';
   const STORAGE_KEY = 'skypulse_recent';
@@ -48,18 +50,24 @@
     return WMO[code] || { desc: 'Unknown', icon: '🌡️', cls: 'clear', bg: 'weather-day' };
   }
 
-  // ── State ──────────────────────────────────────────────────
-  let state = {
+  // =======================
+  // STATE
+  // =======================
+  const state = {
     units: localStorage.getItem('skypulse_units') || 'celsius', // celsius | fahrenheit
     currentView: 'home',
     currentData: null,
+    currentCity: null,
+    unit: 'C',
     searchTimer: null,
     recentCities: JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'),
     currentCityName: '',
     currentCountry: '',
   };
 
-  // ── DOM Refs ───────────────────────────────────────────────
+  // =======================
+  // DOM ELEMENTS
+  // =======================
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
 
@@ -107,6 +115,10 @@
     btnRetry: $('#btnRetry'),
     bottomNav: $('#bottomNav'),
   };
+
+  // =======================
+  // FUNCTIONS
+  // =======================
 
   // ── Utilities ──────────────────────────────────────────────
   const unitSymbol = () => state.units === 'celsius' ? '°C' : '°F';
@@ -244,8 +256,7 @@
     dom.statFeels.textContent = tempStr(convertTemp(cur.apparent_temperature));
     dom.statSunrise.textContent = formatTimeHM(daily.sunrise[0]);
 
-    dom.heroLoader.style.display = 'none';
-    dom.heroContent.style.display = '';
+    hideLoading();
 
     applyWeatherTheme(cur.weather_code);
     renderHourly(data);
@@ -437,8 +448,7 @@
             </div>
             <svg class="search-result__arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
           </div>`).join('');
-      } catch (err) {
-        console.error('Search error:', err);
+      } catch {
         dom.searchResults.innerHTML = `<div class="search-empty" style="display:flex;"><p>Search failed — please try again</p></div>`;
       }
     }, 350);
@@ -466,8 +476,8 @@
         renderDetails(data, cityName, country);
         navigate('details');
       }
-    } catch (err) {
-      console.error('Load weather failed:', err);
+    } catch {
+      hideLoading();
       showError('Failed to load weather', 'Could not fetch weather data. Please check your connection and try again.');
     }
   }
@@ -477,10 +487,22 @@
     dom.heroContent.style.display = 'none';
   }
 
+  function hideLoading() {
+    dom.heroLoader.style.display = 'none';
+    dom.heroContent.style.display = '';
+  }
+
   function showError(title, msg) {
     dom.errorTitle.textContent = title;
     dom.errorMsg.textContent = msg;
     navigate('error');
+  }
+
+  function showErrorView(title, message) {
+    dom.viewHome.style.display = 'none';
+    dom.viewError.style.display = 'block';
+    dom.errorTitle.textContent = title;
+    dom.errorMsg.textContent = message;
   }
 
   // ── Geolocation ────────────────────────────────────────────
@@ -499,7 +521,9 @@
     );
   }
 
-  // ── Events ─────────────────────────────────────────────────
+  // =======================
+  // EVENT LISTENERS
+  // =======================
   function bindEvents() {
     // Bottom nav
     dom.bottomNav.addEventListener('click', (e) => {
@@ -588,7 +612,9 @@
     });
   }
 
-  // ── Init ───────────────────────────────────────────────────
+  // =======================
+  // INIT
+  // =======================
   function init() {
     initParticles();
     bindEvents();
