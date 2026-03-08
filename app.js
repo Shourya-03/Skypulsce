@@ -11,8 +11,11 @@
   // =======================
   const GEO_BASE = 'https://geocoding-api.open-meteo.com/v1';
   const WEATHER_BASE = 'https://api.open-meteo.com/v1';
+  const AQI_BASE = 'https://air-quality-api.open-meteo.com/v1';
   const STORAGE_KEY = 'skypulse_recent';
+  const FAV_KEY = 'skypulse_favs';
   const MAX_RECENT = 5;
+  const MAX_FAV = 10;
 
   // ── WMO Weather Code → Description & Icon mapping ──────────
   const WMO = {
@@ -54,15 +57,20 @@
   // STATE
   // =======================
   const state = {
-    units: localStorage.getItem('skypulse_units') || 'celsius', // celsius | fahrenheit
+    units: localStorage.getItem('skypulse_units') || 'celsius',
     currentView: 'home',
     currentData: null,
     currentCity: null,
-    unit: 'C',
     searchTimer: null,
     recentCities: JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'),
+    favCities: JSON.parse(localStorage.getItem(FAV_KEY) || '[]'),
     currentCityName: '',
     currentCountry: '',
+    currentLat: null,
+    currentLon: null,
+    currentTimezone: null,
+    sunMode: 'sunrise', // 'sunrise' | 'sunset'
+    localTimeInterval: null,
   };
 
   // =======================
@@ -89,14 +97,19 @@
     heroIcon: $('#heroIcon'),
     heroTemp: $('#heroTemp'),
     heroDesc: $('#heroDesc'),
+    heroFeelsAdvisory: $('#heroFeelsAdvisory'),
     heroHigh: $('#heroHigh'),
     heroLow: $('#heroLow'),
     statHumidity: $('#statHumidity'),
     statWind: $('#statWind'),
     statFeels: $('#statFeels'),
     statSunrise: $('#statSunrise'),
+    statSunLabel: $('#statSunLabel'),
+    sunToggleCard: $('#sunToggleCard'),
     statsRow: $('#statsRow'),
     hourlyScroll: $('#hourlyScroll'),
+    favLabel: $('#favLabel'),
+    favList: $('#favList'),
     recentLabel: $('#recentLabel'),
     recentList: $('#recentList'),
     searchInput: $('#searchInput'),
@@ -105,11 +118,15 @@
     searchEmpty: $('#searchEmpty'),
     detailCity: $('#detailCity'),
     detailCountry: $('#detailCountry'),
+    detailLocalTime: $('#detailLocalTime'),
     detailIcon: $('#detailIcon'),
     detailTemp: $('#detailTemp'),
     detailDesc: $('#detailDesc'),
     detailGrid: $('#detailGrid'),
     forecastList: $('#forecastList'),
+    btnFav: $('#btnFav'),
+    btnShare: $('#btnShare'),
+    shareLabel: $('#shareLabel'),
     errorTitle: $('#errorTitle'),
     errorMsg: $('#errorMsg'),
     btnRetry: $('#btnRetry'),
@@ -117,18 +134,15 @@
   };
 
   // =======================
-  // FUNCTIONS
+  // UTILITIES
   // =======================
-
-  // ── Utilities ──────────────────────────────────────────────
   const unitSymbol = () => state.units === 'celsius' ? '°C' : '°F';
   const tempStr = (t) => `${Math.round(t)}°`;
   const convertTemp = (c) => state.units === 'fahrenheit' ? (c * 9 / 5) + 32 : c;
 
   function formatTimeHM(isoStr) {
     const d = new Date(isoStr);
-    const h = d.getHours();
-    const m = d.getMinutes();
+    const h = d.getHours(), m = d.getMinutes();
     const ampm = h >= 12 ? 'PM' : 'AM';
     return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`;
   }
@@ -146,16 +160,77 @@
     return d.toLocaleDateString('en-US', { weekday: 'short' });
   }
 
-  // ── API Calls ──────────────────────────────────────────────
+  // Wind direction: degrees → compass label
+  function windDir(deg) {
+    if (deg === undefined || deg === null) return '';
+    const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    return dirs[Math.round(deg / 45) % 8];
+  }
+
+  // Local time for a given IANA timezone string
+  function localTimeStr(timezone) {
+    if (!timezone) return '';
+    try {
+      return new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        hour: 'numeric', minute: '2-digit', hour12: true,
+      }).format(new Date());
+    } catch { return ''; }
+  }
+
+  // Feels-like advisory
+  function feelsAdvisory(actual, feels) {
+    const diff = feels - actual;
+    if (Math.abs(diff) < 2) return 'Feels accurate to outside temp';
+    if (diff > 6) return '🔥 Feels much hotter than actual';
+    if (diff > 2) return '☀️ Feels warmer than actual';
+    if (diff < -6) return '🥶 Feels much colder than actual';
+    return '❄️ Feels cooler than actual';
+  }
+
+  // AQI label + colour class
+  function aqiInfo(aqi) {
+    if (aqi === undefined || aqi === null) return { label: 'N/A', cls: '' };
+    if (aqi <= 50) return { label: 'Good', cls: 'aqi-good' };
+    if (aqi <= 100) return { label: 'Moderate', cls: 'aqi-moderate' };
+    if (aqi <= 150) return { label: 'Unhealthy (SG)', cls: 'aqi-usg' };
+    if (aqi <= 200) return { label: 'Unhealthy', cls: 'aqi-unhealthy' };
+    if (aqi <= 300) return { label: 'Very Unhealthy', cls: 'aqi-very' };
+    return { label: 'Hazardous', cls: 'aqi-hazardous' };
+  }
+
+  // UV index description
+  function uvDesc(uv) {
+    if (uv === undefined || uv === null) return '';
+    if (uv <= 2) return 'Low';
+    if (uv <= 5) return 'Moderate';
+    if (uv <= 7) return 'High';
+    if (uv <= 10) return 'Very High';
+    return 'Extreme';
+  }
+
+  // =======================
+  // API CALLS
+  // =======================
   async function fetchWeather(lat, lon) {
     const url = `${WEATHER_BASE}/forecast?latitude=${lat}&longitude=${lon}` +
-      `&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_gusts_10m,surface_pressure,is_day` +
-      `&hourly=temperature_2m,weather_code,is_day` +
+      `&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,surface_pressure,is_day` +
+      `&hourly=temperature_2m,weather_code,precipitation_probability,is_day` +
       `&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max` +
       `&timezone=auto&forecast_days=7`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Weather API error ${res.status}`);
     return res.json();
+  }
+
+  async function fetchAirQuality(lat, lon) {
+    try {
+      const url = `${AQI_BASE}/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi,pm2_5`;
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.current ?? null;
+    } catch { return null; }
   }
 
   async function geocodeCity(query) {
@@ -166,7 +241,6 @@
   }
 
   async function reverseGeocode(lat, lon) {
-    // Open-Meteo doesn't have reverse geocoding, use a free one
     try {
       const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=en`;
       const res = await fetch(url, { headers: { 'User-Agent': 'SkyPulse-WeatherApp/1.0' } });
@@ -180,7 +254,9 @@
     }
   }
 
-  // ── Particles ──────────────────────────────────────────────
+  // =======================
+  // PARTICLES
+  // =======================
   function initParticles() {
     const container = dom.particles;
     container.innerHTML = '';
@@ -196,15 +272,21 @@
     }
   }
 
-  // ── Weather Theme ──────────────────────────────────────────
+  // =======================
+  // WEATHER THEME
+  // =======================
   function applyWeatherTheme(code) {
     document.body.className = '';
-    const wmo = getWMO(code);
-    document.body.classList.add(wmo.bg);
+    document.body.classList.add(getWMO(code).bg);
   }
 
-  // ── Router ─────────────────────────────────────────────────
-  const views = { home: dom.viewHome, search: dom.viewSearch, details: dom.viewDetails, error: dom.viewError };
+  // =======================
+  // ROUTER
+  // =======================
+  const views = {
+    home: dom.viewHome, search: dom.viewSearch,
+    details: dom.viewDetails, error: dom.viewError,
+  };
 
   function navigate(viewName) {
     state.currentView = viewName;
@@ -220,28 +302,89 @@
     $$('.bottom-nav__item').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.view === viewName || (viewName === 'details' && btn.dataset.view === 'search'));
     });
-    if (viewName === 'search') {
-      setTimeout(() => dom.searchInput.focus(), 100);
-    }
+    if (viewName === 'search') setTimeout(() => dom.searchInput.focus(), 100);
     history.replaceState(null, '', `#${viewName}`);
+
+    // Stop local-time clock when leaving details
+    if (viewName !== 'details' && state.localTimeInterval) {
+      clearInterval(state.localTimeInterval);
+      state.localTimeInterval = null;
+    }
   }
 
-  // ── Render: Home ───────────────────────────────────────────
+  // =======================
+  // FAVOURITES
+  // =======================
+  function isFav(lat, lon) {
+    return state.favCities.some(c => Math.abs(c.lat - lat) < 0.05 && Math.abs(c.lon - lon) < 0.05);
+  }
+
+  function toggleFav(cityName, country, lat, lon, temp, weatherCode) {
+    const wmo = getWMO(weatherCode);
+    if (isFav(lat, lon)) {
+      state.favCities = state.favCities.filter(c =>
+        !(Math.abs(c.lat - lat) < 0.05 && Math.abs(c.lon - lon) < 0.05)
+      );
+    } else {
+      const entry = {
+        name: cityName + (country ? `, ${country}` : ''),
+        lat, lon, country,
+        temp: convertTemp(temp),
+        icon: wmo.icon,
+        desc: wmo.desc,
+      };
+      state.favCities.unshift(entry);
+      state.favCities = state.favCities.slice(0, MAX_FAV);
+    }
+    localStorage.setItem(FAV_KEY, JSON.stringify(state.favCities));
+    updateFavButton(lat, lon);
+    renderFavorites();
+  }
+
+  function updateFavButton(lat, lon) {
+    const active = isFav(lat, lon);
+    dom.btnFav.classList.toggle('btn-fav--active', active);
+    dom.btnFav.title = active ? 'Remove from Favourites' : 'Add to Favourites';
+    dom.btnFav.querySelector('svg').setAttribute('fill', active ? 'currentColor' : 'none');
+  }
+
+  function renderFavorites() {
+    const cities = state.favCities;
+    if (!cities.length) {
+      dom.favLabel.style.display = 'none';
+      dom.favList.innerHTML = '';
+      return;
+    }
+    dom.favLabel.style.display = '';
+    dom.favList.innerHTML = cities.map((c, i) => `
+      <div class="recent-item fav-item" data-lat="${c.lat}" data-lon="${c.lon}" data-name="${c.name}" data-country="${c.country || ''}" data-index="${i}">
+        <span style="font-size:28px;">${c.icon}</span>
+        <div class="recent-item__info">
+          <div class="recent-item__city">${c.name}</div>
+          <div class="recent-item__desc">${c.desc}</div>
+        </div>
+        <span class="recent-item__temp">${tempStr(c.temp)}</span>
+        <button class="recent-item__remove fav-remove" data-fav-remove="${i}" aria-label="Unfav">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="0" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+        </button>
+      </div>`).join('');
+  }
+
+  // =======================
+  // RENDER: HOME
+  // =======================
   function renderHome(data, cityName, country) {
     state.currentData = data;
     state.currentCityName = cityName;
     state.currentCountry = country;
+    state.currentTimezone = data.timezone;
 
     const cur = data.current;
     const daily = data.daily;
     const wmo = getWMO(cur.weather_code);
 
     dom.heroCity.textContent = cityName + (country ? `, ${country}` : '');
-    dom.heroIcon.src = '';
-    dom.heroIcon.alt = wmo.desc;
-    // Use emoji as icon in a canvas trick — or just put emoji directly
-    dom.heroIcon.style.display = 'none';
-    // Instead show emoji in the icon wrap
+
     const iconWrap = dom.heroIcon.parentElement;
     iconWrap.innerHTML = `<span style="font-size:72px;line-height:1;">${wmo.icon}</span>`;
 
@@ -250,22 +393,39 @@
     dom.heroHigh.textContent = tempStr(convertTemp(daily.temperature_2m_max[0]));
     dom.heroLow.textContent = tempStr(convertTemp(daily.temperature_2m_min[0]));
 
+    // Feels-like advisory
+    dom.heroFeelsAdvisory.textContent = feelsAdvisory(cur.temperature_2m, cur.apparent_temperature);
+
     // Stats
     dom.statHumidity.textContent = cur.relative_humidity_2m + '%';
-    dom.statWind.textContent = Math.round(cur.wind_speed_10m) + ' km/h';
+    const dir = windDir(cur.wind_direction_10m);
+    dom.statWind.textContent = Math.round(cur.wind_speed_10m) + ' km/h' + (dir ? ' ' + dir : '');
     dom.statFeels.textContent = tempStr(convertTemp(cur.apparent_temperature));
-    dom.statSunrise.textContent = formatTimeHM(daily.sunrise[0]);
+
+    // Sun toggle card
+    updateSunCard(daily);
 
     hideLoading();
-
     applyWeatherTheme(cur.weather_code);
     renderHourly(data);
+    renderFavorites();
     renderRecentCities();
   }
 
+  // ── Sun toggle (Sunrise / Sunset) ──────────────────────────
+  function updateSunCard(daily) {
+    if (state.sunMode === 'sunrise') {
+      dom.statSunrise.textContent = formatTimeHM(daily.sunrise[0]);
+      dom.statSunLabel.textContent = 'Sunrise';
+    } else {
+      dom.statSunrise.textContent = formatTimeHM(daily.sunset[0]);
+      dom.statSunLabel.textContent = 'Sunset';
+    }
+  }
+
+  // ── Hourly cards with precipitation % ───────────────────────
   function renderHourly(data) {
     const hourly = data.hourly;
-    // Find current hour index
     const now = new Date();
     let startIdx = 0;
     for (let i = 0; i < hourly.time.length; i++) {
@@ -276,17 +436,24 @@
       const idx = startIdx + i;
       const wmo = getWMO(hourly.weather_code[idx]);
       const temp = convertTemp(hourly.temperature_2m[idx]);
+      const precip = hourly.precipitation_probability ? hourly.precipitation_probability[idx] : null;
       const label = i === 0 ? 'Now' : formatHour(t);
+      const precipHtml = (precip !== null && precip > 0)
+        ? `<span class="hourly-card__precip">💧${precip}%</span>`
+        : `<span class="hourly-card__precip"></span>`;
       return `
         <div class="hourly-card ${i === 0 ? 'now' : ''}">
           <span class="hourly-card__time">${label}</span>
           <span class="hourly-card__icon" style="font-size:24px;">${wmo.icon}</span>
           <span class="hourly-card__temp">${tempStr(temp)}</span>
+          ${precipHtml}
         </div>`;
     }).join('');
   }
 
-  // ── Render: Recent Cities ──────────────────────────────────
+  // =======================
+  // RENDER: RECENT CITIES
+  // =======================
   function renderRecentCities() {
     const cities = state.recentCities;
     if (!cities.length) {
@@ -326,11 +493,16 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.recentCities));
   }
 
-  // ── Render: Details ────────────────────────────────────────
-  function renderDetails(data, cityName, country) {
+  // =======================
+  // RENDER: DETAILS
+  // =======================
+  async function renderDetails(data, cityName, country, lat, lon) {
     state.currentData = data;
     state.currentCityName = cityName;
     state.currentCountry = country;
+    state.currentLat = lat;
+    state.currentLon = lon;
+    state.currentTimezone = data.timezone;
 
     const cur = data.current;
     const daily = data.daily;
@@ -338,30 +510,82 @@
 
     dom.detailCity.textContent = cityName;
     dom.detailCountry.textContent = country || '';
+
+    // Local time (live clock)
+    if (state.localTimeInterval) clearInterval(state.localTimeInterval);
+    const updateLocalTime = () => {
+      const t = localTimeStr(data.timezone);
+      dom.detailLocalTime.textContent = t ? `🕐 Local time: ${t}` : '';
+    };
+    updateLocalTime();
+    state.localTimeInterval = setInterval(updateLocalTime, 30000);
+
+    // Icon
     dom.detailIcon.style.display = 'none';
-    dom.detailIcon.parentElement.insertAdjacentHTML('beforeend', `<span class="detail-emoji" style="font-size:56px;line-height:1;">${wmo.icon}</span>`);
-    // Remove previous emoji if any
     const prevEmoji = dom.detailIcon.parentElement.querySelectorAll('.detail-emoji');
-    if (prevEmoji.length > 1) prevEmoji[0].remove();
+    prevEmoji.forEach(e => e.remove());
+    dom.detailIcon.parentElement.insertAdjacentHTML('afterbegin',
+      `<span class="detail-emoji" style="font-size:56px;line-height:1;">${wmo.icon}</span>`);
 
     dom.detailTemp.textContent = tempStr(convertTemp(cur.temperature_2m));
     dom.detailDesc.textContent = wmo.desc;
 
     applyWeatherTheme(cur.weather_code);
 
+    // Fav button state
+    updateFavButton(lat, lon);
+
+    // Fetch AQI (non-blocking)
+    const aqiData = await fetchAirQuality(lat, lon);
+    const aqiVal = aqiData?.us_aqi;
+    const aqi = aqiInfo(aqiVal);
+
     // Detail grid tiles
     const feelsLike = convertTemp(cur.apparent_temperature);
     const diff = cur.apparent_temperature - cur.temperature_2m;
     const feelsDesc = Math.abs(diff) < 2 ? 'Similar to actual' : diff > 0 ? 'Warmer than actual' : 'Cooler than actual';
+    const dir = windDir(cur.wind_direction_10m);
+    const windSub = [
+      cur.wind_gusts_10m ? `Gusts: ${Math.round(cur.wind_gusts_10m)} km/h` : '',
+      dir ? `Direction: ${dir}` : '',
+    ].filter(Boolean).join(' · ');
 
     const tiles = [
-      { icon: '💧', label: 'Humidity', value: cur.relative_humidity_2m + '%', sub: '' },
-      { icon: '💨', label: 'Wind', value: Math.round(cur.wind_speed_10m) + ' km/h', sub: cur.wind_gusts_10m ? `Gusts: ${Math.round(cur.wind_gusts_10m)} km/h` : '' },
-      { icon: '🌡️', label: 'Feels Like', value: tempStr(feelsLike), sub: feelsDesc },
-      { icon: '🔽', label: 'Pressure', value: Math.round(cur.surface_pressure) + ' hPa', sub: '' },
-      { icon: '🌅', label: 'Sunrise', value: formatTimeHM(daily.sunrise[0]), sub: 'Sunset ' + formatTimeHM(daily.sunset[0]) },
-      { icon: '☀️', label: 'UV Index', value: daily.uv_index_max[0] !== undefined ? daily.uv_index_max[0].toFixed(1) : '—', sub: uvDesc(daily.uv_index_max[0]) },
+      {
+        icon: '💧', label: 'Humidity',
+        value: cur.relative_humidity_2m + '%', sub: '',
+      },
+      {
+        icon: '💨', label: 'Wind',
+        value: Math.round(cur.wind_speed_10m) + ' km/h',
+        sub: windSub,
+      },
+      {
+        icon: '🌡️', label: 'Feels Like',
+        value: tempStr(feelsLike), sub: feelsDesc,
+      },
+      {
+        icon: '🔽', label: 'Pressure',
+        value: Math.round(cur.surface_pressure) + ' hPa', sub: '',
+      },
+      {
+        icon: '🌅', label: 'Sunrise / Sunset',
+        value: formatTimeHM(daily.sunrise[0]),
+        sub: 'Sunset ' + formatTimeHM(daily.sunset[0]),
+      },
+      {
+        icon: '☀️', label: 'UV Index',
+        value: daily.uv_index_max[0] !== undefined ? daily.uv_index_max[0].toFixed(1) : '—',
+        sub: uvDesc(daily.uv_index_max[0]),
+      },
+      {
+        icon: '🌿', label: 'Air Quality',
+        value: aqiVal !== undefined && aqiVal !== null ? `AQI ${aqiVal}` : '—',
+        sub: aqiVal !== undefined ? `<span class="aqi-pill ${aqi.cls}">${aqi.label}</span>` : '',
+        rawSub: true,
+      },
     ];
+
     dom.detailGrid.innerHTML = tiles.map(t => `
       <div class="detail-tile">
         <div class="detail-tile__header">
@@ -369,19 +593,14 @@
           <span class="detail-tile__label">${t.label}</span>
         </div>
         <div class="detail-tile__value">${t.value}</div>
-        ${t.sub ? `<div class="detail-tile__sub">${t.sub}</div>` : ''}
+        ${t.sub ? `<div class="detail-tile__sub">${t.rawSub ? t.sub : escapeHtml(t.sub)}</div>` : ''}
       </div>`).join('');
 
     renderForecastDays(data);
   }
 
-  function uvDesc(uv) {
-    if (uv === undefined || uv === null) return '';
-    if (uv <= 2) return 'Low';
-    if (uv <= 5) return 'Moderate';
-    if (uv <= 7) return 'High';
-    if (uv <= 10) return 'Very high';
-    return 'Extreme';
+  function escapeHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
   function renderForecastDays(data) {
@@ -419,7 +638,45 @@
     }).join('');
   }
 
-  // ── Search ─────────────────────────────────────────────────
+  // =======================
+  // SHARE
+  // =======================
+  async function shareWeather() {
+    const data = state.currentData;
+    const city = state.currentCityName;
+    const country = state.currentCountry;
+    if (!data) return;
+
+    const cur = data.current;
+    const wmo = getWMO(cur.weather_code);
+    const temp = Math.round(convertTemp(cur.temperature_2m));
+    const sym = unitSymbol();
+    const text = `${wmo.icon} ${city}${country ? ', ' + country : ''}: ${wmo.desc}, ${temp}${sym}. Humidity ${cur.relative_humidity_2m}%, Wind ${Math.round(cur.wind_speed_10m)} km/h. Shared via SkyPulse 🌤️`;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `SkyPulse – ${city}`, text });
+      } else {
+        await navigator.clipboard.writeText(text);
+        flashShareLabel('Copied! ✓');
+      }
+    } catch {
+      try { await navigator.clipboard.writeText(text); flashShareLabel('Copied! ✓'); } catch { /* silent */ }
+    }
+  }
+
+  function flashShareLabel(msg) {
+    dom.shareLabel.textContent = msg;
+    dom.btnShare.classList.add('btn-share--flash');
+    setTimeout(() => {
+      dom.shareLabel.textContent = 'Share';
+      dom.btnShare.classList.remove('btn-share--flash');
+    }, 2000);
+  }
+
+  // =======================
+  // SEARCH
+  // =======================
   function handleSearch(query) {
     clearTimeout(state.searchTimer);
     dom.searchClear.style.display = query ? '' : 'none';
@@ -454,13 +711,14 @@
     }, 350);
   }
 
-  // ── Load Weather ───────────────────────────────────────────
+  // =======================
+  // LOAD WEATHER
+  // =======================
   async function loadWeatherForCoords(lat, lon, cityName, country, isHome = false) {
     try {
       showLoading();
       const data = await fetchWeather(lat, lon);
 
-      // If no city name, reverse geocode
       if (!cityName) {
         const geo = await reverseGeocode(lat, lon);
         cityName = geo.city;
@@ -473,7 +731,7 @@
         renderHome(data, cityName, country);
         navigate('home');
       } else {
-        renderDetails(data, cityName, country);
+        await renderDetails(data, cityName, country, lat, lon);
         navigate('details');
       }
     } catch {
@@ -498,14 +756,9 @@
     navigate('error');
   }
 
-  function showErrorView(title, message) {
-    dom.viewHome.style.display = 'none';
-    dom.viewError.style.display = 'block';
-    dom.errorTitle.textContent = title;
-    dom.errorMsg.textContent = message;
-  }
-
-  // ── Geolocation ────────────────────────────────────────────
+  // =======================
+  // GEOLOCATION
+  // =======================
   function requestLocation() {
     if (!navigator.geolocation) {
       loadWeatherForCoords(28.6139, 77.2090, 'New Delhi', 'IN', true);
@@ -513,10 +766,7 @@
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => loadWeatherForCoords(pos.coords.latitude, pos.coords.longitude, null, null, true),
-      () => {
-        // Denied → load New Delhi as fallback
-        loadWeatherForCoords(28.6139, 77.2090, 'New Delhi', 'IN', true);
-      },
+      () => loadWeatherForCoords(28.6139, 77.2090, 'New Delhi', 'IN', true),
       { timeout: 8000 }
     );
   }
@@ -529,12 +779,7 @@
     dom.bottomNav.addEventListener('click', (e) => {
       const btn = e.target.closest('.bottom-nav__item');
       if (!btn) return;
-      const view = btn.dataset.view;
-      if (view === 'home') {
-        navigate('home');
-      } else {
-        navigate(view);
-      }
+      navigate(btn.dataset.view);
     });
 
     // Back button
@@ -545,20 +790,24 @@
       state.units = state.units === 'celsius' ? 'fahrenheit' : 'celsius';
       localStorage.setItem('skypulse_units', state.units);
       dom.unitLabel.textContent = state.units === 'celsius' ? '°C' : '°F';
-      // Re-render with current data
       if (state.currentData) {
         if (state.currentView === 'details') {
-          renderDetails(state.currentData, state.currentCityName, state.currentCountry);
+          renderDetails(state.currentData, state.currentCityName, state.currentCountry, state.currentLat, state.currentLon);
         } else {
           renderHome(state.currentData, state.currentCityName, state.currentCountry);
         }
-        // Update recent cities temps
-        state.recentCities = state.recentCities.map(c => ({ ...c }));
+        renderFavorites();
         renderRecentCities();
       }
     });
 
-    // Search input
+    // Sunrise/Sunset toggle card
+    dom.sunToggleCard.addEventListener('click', () => {
+      state.sunMode = state.sunMode === 'sunrise' ? 'sunset' : 'sunrise';
+      if (state.currentData) updateSunCard(state.currentData.daily);
+    });
+
+    // Search
     dom.searchInput.addEventListener('input', (e) => handleSearch(e.target.value));
     dom.searchClear.addEventListener('click', () => {
       dom.searchInput.value = '';
@@ -570,11 +819,29 @@
     dom.searchResults.addEventListener('click', (e) => {
       const item = e.target.closest('.search-result');
       if (!item) return;
-      const lat = parseFloat(item.dataset.lat);
-      const lon = parseFloat(item.dataset.lon);
-      const name = item.dataset.name;
-      const country = item.dataset.country;
-      loadWeatherForCoords(lat, lon, name, country, false);
+      loadWeatherForCoords(
+        parseFloat(item.dataset.lat),
+        parseFloat(item.dataset.lon),
+        item.dataset.name,
+        item.dataset.country,
+        false
+      );
+    });
+
+    // Favourite list click (home)
+    dom.favList.addEventListener('click', (e) => {
+      const removeBtn = e.target.closest('[data-fav-remove]');
+      if (removeBtn) {
+        e.stopPropagation();
+        const idx = parseInt(removeBtn.dataset.favRemove);
+        state.favCities.splice(idx, 1);
+        localStorage.setItem(FAV_KEY, JSON.stringify(state.favCities));
+        renderFavorites();
+        return;
+      }
+      const item = e.target.closest('.fav-item');
+      if (!item) return;
+      loadWeatherForCoords(parseFloat(item.dataset.lat), parseFloat(item.dataset.lon), item.dataset.name, item.dataset.country, false);
     });
 
     // Recent city click
@@ -590,12 +857,22 @@
       }
       const item = e.target.closest('.recent-item');
       if (!item) return;
-      const lat = parseFloat(item.dataset.lat);
-      const lon = parseFloat(item.dataset.lon);
-      const name = item.dataset.name;
-      const country = item.dataset.country;
-      loadWeatherForCoords(lat, lon, name, country, false);
+      loadWeatherForCoords(parseFloat(item.dataset.lat), parseFloat(item.dataset.lon), item.dataset.name, item.dataset.country, false);
     });
+
+    // Favourite star (detail view)
+    dom.btnFav.addEventListener('click', () => {
+      if (!state.currentData) return;
+      const cur = state.currentData.current;
+      toggleFav(
+        state.currentCityName, state.currentCountry,
+        state.currentLat, state.currentLon,
+        cur.temperature_2m, cur.weather_code
+      );
+    });
+
+    // Share button
+    dom.btnShare.addEventListener('click', shareWeather);
 
     // Retry
     dom.btnRetry.addEventListener('click', () => {
@@ -606,9 +883,7 @@
     // Hash routing
     window.addEventListener('hashchange', () => {
       const hash = location.hash.slice(1);
-      if (views[hash] && hash !== state.currentView) {
-        navigate(hash);
-      }
+      if (views[hash] && hash !== state.currentView) navigate(hash);
     });
   }
 

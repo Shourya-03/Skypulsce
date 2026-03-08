@@ -5,7 +5,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description"
-    content="Beautiful real-time weather app — search any city, view forecasts, and explore current conditions with a stunning animated UI." />
+    content="Beautiful real-time weather app — search any city, view forecasts, air quality, and explore current conditions with a stunning animated UI." />
   <title>SkyPulse — Weather App</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -66,6 +66,7 @@
             </div>
             <div class="hero__temp" id="heroTemp">--°</div>
             <div class="hero__desc" id="heroDesc">—</div>
+            <div class="hero__feels-advisory" id="heroFeelsAdvisory"></div>
             <div class="hero__minmax">
               <span>H:<strong id="heroHigh">--°</strong></span>
               <span class="hero__dot">·</span>
@@ -109,9 +110,9 @@
             <span class="stat-card__value" id="statFeels">--°</span>
             <span class="stat-card__label">Feels Like</span>
           </div>
-          <div class="stat-card">
-            <svg class="stat-card__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <div class="stat-card" id="sunToggleCard" title="Click to toggle Sunrise / Sunset">
+            <svg class="stat-card__icon" id="sunToggleIcon" width="20" height="20" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M17 18a5 5 0 0 0-10 0"></path>
               <line x1="12" y1="9" x2="12" y2="2"></line>
               <line x1="4.22" y1="10.22" x2="5.64" y2="11.64"></line>
@@ -120,7 +121,7 @@
               <line x1="18.36" y1="11.64" x2="19.78" y2="10.22"></line>
             </svg>
             <span class="stat-card__value" id="statSunrise">--:--</span>
-            <span class="stat-card__label">Sunrise</span>
+            <span class="stat-card__label" id="statSunLabel">Sunrise</span>
           </div>
         </section>
 
@@ -128,6 +129,14 @@
         <section class="hourly-section">
           <div class="section-label">Today's Forecast</div>
           <div class="hourly-scroll" id="hourlyScroll">
+            <!-- JS populates -->
+          </div>
+        </section>
+
+        <!-- Favourite cities -->
+        <section class="fav-section">
+          <div class="section-label" id="favLabel" style="display:none;">⭐ Favourites</div>
+          <div class="fav-list" id="favList">
             <!-- JS populates -->
           </div>
         </section>
@@ -180,11 +189,35 @@
             <div>
               <div class="detail-hero__city" id="detailCity">—</div>
               <div class="detail-hero__country" id="detailCountry">—</div>
+              <div class="detail-hero__localtime" id="detailLocalTime"></div>
             </div>
-            <img class="detail-hero__icon" id="detailIcon" src="" alt="Weather icon" />
+            <div class="detail-hero__right">
+              <img class="detail-hero__icon" id="detailIcon" src="" alt="Weather icon" />
+              <!-- Favourite star button -->
+              <button type="button" class="btn-fav" id="btnFav" aria-label="Toggle favourite" title="Add to Favourites">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <polygon
+                    points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2">
+                  </polygon>
+                </svg>
+              </button>
+            </div>
           </div>
           <div class="detail-hero__temp" id="detailTemp">--°</div>
           <div class="detail-hero__desc" id="detailDesc">—</div>
+          <!-- Share button -->
+          <button type="button" class="btn-share" id="btnShare" aria-label="Share weather">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="18" cy="5" r="3"></circle>
+              <circle cx="6" cy="12" r="3"></circle>
+              <circle cx="18" cy="19" r="3"></circle>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+            </svg>
+            <span id="shareLabel">Share</span>
+          </button>
         </header>
 
         <section class="detail-grid" id="detailGrid">
